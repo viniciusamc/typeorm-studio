@@ -29,6 +29,8 @@ async function runCliInDirectory(
   overrides: {
     readonly shellEnv?: Readonly<Record<string, string>>;
     readonly nodeVersion?: string;
+    readonly stopSignal?: AbortSignal;
+    readonly onStdout?: (text: string) => void;
   } = {},
 ): Promise<CliRun> {
   let stdout = '';
@@ -38,9 +40,11 @@ async function runCliInDirectory(
     cwd,
     shellEnv: overrides.shellEnv ?? {},
     nodeVersion: overrides.nodeVersion ?? process.versions.node,
+    stopSignal: overrides.stopSignal ?? new AbortController().signal,
     stdout: {
       write: (text: string): void => {
         stdout += text;
+        overrides.onStdout?.(text);
       },
     },
     stderr: {
@@ -50,6 +54,31 @@ async function runCliInDirectory(
     },
   });
   return { exitCode, stdout, stderr };
+}
+
+const studioStartTimeoutMs = 20_000;
+
+async function runStudioUntilStopLine(
+  cwd: string,
+  argv: readonly string[],
+  shellEnv: Readonly<Record<string, string>>,
+): Promise<CliRun> {
+  const stopController = new AbortController();
+  const safetyTimer = setTimeout(
+    () => stopController.abort(),
+    studioStartTimeoutMs,
+  );
+  try {
+    return await runCliInDirectory(cwd, argv, {
+      shellEnv,
+      stopSignal: stopController.signal,
+      onStdout: (text: string): void => {
+        if (text.includes('Ctrl-C to stop')) stopController.abort();
+      },
+    });
+  } finally {
+    clearTimeout(safetyTimer);
+  }
 }
 
 async function reserveClosedPort(): Promise<number> {
@@ -268,16 +297,76 @@ describe('runCli against a real Postgres', () => {
     expect(run.stdout).toMatch(/mode {8}read-write\n/);
   });
 
-  it('exits 7 without --dry-run until the Studio engine exists', async () => {
-    const run = await runCliInDirectory(esmProjectDirectory, [], {
-      shellEnv: {
+  it('starts Studio read-only on an explicit port and stops on abort', async () => {
+    const studioPort = await reserveClosedPort();
+
+    const run = await runStudioUntilStopLine(
+      esmProjectDirectory,
+      ['--port', String(studioPort)],
+      {
         POSTGRES_HOST: String(container?.getHost()),
         POSTGRES_PORT: String(container?.getPort()),
       },
-    });
+    );
 
-    expect(run.exitCode).toBe(7);
-    expect(run.stderr).toContain('Starting Studio is not implemented yet');
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout).toContain(
+      `  studio      https://local.drizzle.studio?port=${studioPort}\n`,
+    );
+    expect(run.stdout.split('https://local.drizzle.studio')).toHaveLength(2);
+    expect(run.stdout).toContain('read-only (pass --write to edit)');
+    expect(run.stdout).toContain('Ctrl-C to stop');
+    expect(run.stdout + run.stderr).not.toContain(esmEnvPassword);
+    expect(run.stdout + run.stderr).not.toContain(cjsEnvPassword);
+  });
+
+  it('starts Studio read-write with --write and stops on abort', async () => {
+    const studioPort = await reserveClosedPort();
+
+    const run = await runStudioUntilStopLine(
+      esmProjectDirectory,
+      ['--write', '--port', String(studioPort)],
+      {
+        POSTGRES_HOST: String(container?.getHost()),
+        POSTGRES_PORT: String(container?.getPort()),
+      },
+    );
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout).toMatch(/mode {8}read-write\n/);
+    expect(run.stdout).toContain('https://local.drizzle.studio');
+    expect(run.stdout + run.stderr).not.toContain(esmEnvPassword);
+  });
+
+  it('exits 7 when the explicit --port is already in use', async () => {
+    const occupant = net.createServer();
+    await new Promise<void>((resolve) =>
+      occupant.listen(0, '127.0.0.1', resolve),
+    );
+    try {
+      const address = occupant.address();
+      if (typeof address !== 'object' || address === null) {
+        throw new Error('the occupying server has no port');
+      }
+
+      const run = await runStudioUntilStopLine(
+        esmProjectDirectory,
+        ['--port', String(address.port)],
+        {
+          POSTGRES_HOST: String(container?.getHost()),
+          POSTGRES_PORT: String(container?.getPort()),
+        },
+      );
+
+      expect(run.exitCode).toBe(7);
+      expect(run.stderr).toContain(
+        `Port ${address.port} on 127.0.0.1 is already in use`,
+      );
+      expect(run.stdout).not.toContain('https://local.drizzle.studio');
+      expect(run.stdout + run.stderr).not.toContain(esmEnvPassword);
+    } finally {
+      await new Promise<void>((resolve) => occupant.close(() => resolve()));
+    }
   });
 
   it('exits 6 on a wrong password and prints neither password', async () => {

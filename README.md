@@ -8,7 +8,7 @@
 
 Status: work in progress, not published.
 
-## Usage (planned)
+## Usage
 
 ```sh
 npx typeorm-studio            # from your project or monorepo root

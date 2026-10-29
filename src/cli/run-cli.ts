@@ -2,6 +2,10 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import {
+  runStudioEngine,
+  type StudioEngineExit,
+} from '../drizzle/run-studio-engine.ts';
+import {
   checkTargetReachable,
   type ReachabilityVerdict,
   type UnreachableReason,
@@ -30,6 +34,7 @@ export type CliEnvironment = {
   readonly nodeVersion: string;
   readonly stdout: { write(text: string): unknown };
   readonly stderr: { write(text: string): unknown };
+  readonly stopSignal: AbortSignal;
 };
 
 type CliOptions = {
@@ -57,6 +62,7 @@ class CliFailure extends Error {
 
 const exitCodes = {
   ok: 0,
+  crashed: 1,
   usage: 2,
   project: 3,
   load: 4,
@@ -269,10 +275,63 @@ async function openStudio(
     writeStep(environment, 'dry run', 'done, Studio not started');
     return exitCodes.ok;
   }
-  throw new CliFailure(exitCodes.studio, {
-    message: 'Starting Studio is not implemented yet',
-    hint: 'Use --dry-run for now; the drizzle-kit engine lands in the next milestone',
+  return await serveStudio(target, options, environment);
+}
+
+async function serveStudio(
+  target: ConnectionTarget,
+  options: CliOptions,
+  environment: CliEnvironment,
+): Promise<number> {
+  const exit = await runStudioEngine({
+    database: target,
+    port: options.port,
+    abortSignal: environment.stopSignal,
+    onListening: (studio) => {
+      writeStep(environment, 'studio', studio.url);
+      writeStep(
+        environment,
+        '',
+        'open it in your browser; press Ctrl-C to stop',
+      );
+    },
   });
+  if (exit.kind === 'stopped') return exitCodes.ok;
+  if ('outputTail' in exit && exit.outputTail.trim() !== '') {
+    environment.stderr.write(`  output      ${exit.outputTail.trim()}\n`);
+  }
+  throw describeEngineExit(exit);
+}
+
+function describeEngineExit(
+  exit: Exclude<StudioEngineExit, { kind: 'stopped' }>,
+): CliFailure {
+  switch (exit.kind) {
+    case 'port-busy':
+      return new CliFailure(exitCodes.studio, {
+        message: `Port ${exit.port} on 127.0.0.1 is already in use`,
+        hint: 'Pick another one with --port <number>, or omit --port to get a free one',
+      });
+    case 'pins-mismatch':
+      return new CliFailure(exitCodes.studio, {
+        message: `${exit.packageName} ${exit.found} is installed, but typeorm-studio needs ${exit.expected}`,
+        hint: 'Reinstall typeorm-studio; its drizzle-kit and drizzle-orm versions are pinned together',
+      });
+    case 'gate-refused':
+      return new CliFailure(exitCodes.studio, {
+        message:
+          'The Studio engine could not be locked to https://local.drizzle.studio, so it was not started',
+        hint: 'drizzle-kit may have changed how it starts its server; check the pinned version',
+      });
+    case 'engine-failed':
+      return new CliFailure(
+        exit.phase === 'running' ? exitCodes.crashed : exitCodes.studio,
+        {
+          message: `The Studio engine ${exit.phase === 'running' ? 'stopped unexpectedly' : 'stopped before it was ready'} (exit code ${exit.exitCode ?? 'none'}, signal ${exit.signal ?? 'none'})`,
+          hint: 'The output above is the end of what the engine printed',
+        },
+      );
+  }
 }
 
 function describeLocationFailure(
