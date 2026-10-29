@@ -32,7 +32,8 @@ export type CliEnvironment = {
   readonly cwd: string;
   readonly shellEnv: Readonly<Record<string, string | undefined>>;
   readonly nodeVersion: string;
-  readonly stdout: { write(text: string): unknown };
+  readonly stdout: { write(text: string): unknown; readonly isTTY?: boolean };
+  readonly openBrowser: (url: string) => void;
   readonly stderr: { write(text: string): unknown };
   readonly stopSignal: AbortSignal;
 };
@@ -44,6 +45,7 @@ type CliOptions = {
   readonly port: number | undefined;
   readonly write: boolean;
   readonly dryRun: boolean;
+  readonly open: boolean;
   readonly verbose: boolean;
 };
 
@@ -84,6 +86,7 @@ Options:
   -p, --port <number>      Studio port (default 4983)
       --write              allow edits (Studio starts read-only)
       --dry-run            find the project, load it and check the database, then stop
+      --no-open            print the Studio link without opening the browser
       --verbose            print timings and warnings
   -h, --help               show this help
   -v, --version            show the version
@@ -149,6 +152,7 @@ function parseCliCommand(
     port: parsePortOption(values.port),
     write: values.write,
     dryRun: values['dry-run'],
+    open: !values['no-open'],
     verbose: values.verbose,
   };
 }
@@ -160,6 +164,7 @@ function parseCliArguments(argv: readonly string[]): {
     readonly port?: string;
     readonly write: boolean;
     readonly 'dry-run': boolean;
+    readonly 'no-open': boolean;
     readonly verbose: boolean;
     readonly help: boolean;
     readonly version: boolean;
@@ -177,6 +182,7 @@ function parseCliArguments(argv: readonly string[]): {
         port: { type: 'string', short: 'p' },
         write: { type: 'boolean', default: false },
         'dry-run': { type: 'boolean', default: false },
+        'no-open': { type: 'boolean', default: false },
         verbose: { type: 'boolean', default: false },
         help: { type: 'boolean', short: 'h', default: false },
         version: { type: 'boolean', short: 'v', default: false },
@@ -288,11 +294,16 @@ async function serveStudio(
     port: options.port,
     abortSignal: environment.stopSignal,
     onListening: (studio) => {
-      writeStep(environment, 'studio', studio.url);
+      // OSC 8 makes the URL clickable; terminals without support show the text.
+      const link = environment.stdout.isTTY
+        ? `\u001B]8;;${studio.url}\u001B\\${studio.url}\u001B]8;;\u001B\\`
+        : studio.url;
+      writeStep(environment, 'studio', link);
+      if (options.open) environment.openBrowser(studio.url);
       writeStep(
         environment,
         '',
-        'open it in your browser; press Ctrl-C to stop',
+        `${options.open ? 'opening it in your browser' : 'open it in your browser'}; press Ctrl-C to stop`,
       );
     },
   });

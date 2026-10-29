@@ -21,6 +21,7 @@ type CliRun = {
   readonly exitCode: number;
   readonly stdout: string;
   readonly stderr: string;
+  readonly openedUrls: readonly string[];
 };
 
 async function runCliInDirectory(
@@ -31,10 +32,12 @@ async function runCliInDirectory(
     readonly nodeVersion?: string;
     readonly stopSignal?: AbortSignal;
     readonly onStdout?: (text: string) => void;
+    readonly isTTY?: boolean;
   } = {},
 ): Promise<CliRun> {
   let stdout = '';
   let stderr = '';
+  const openedUrls: string[] = [];
   const exitCode = await runCli({
     argv,
     cwd,
@@ -42,6 +45,7 @@ async function runCliInDirectory(
     nodeVersion: overrides.nodeVersion ?? process.versions.node,
     stopSignal: overrides.stopSignal ?? new AbortController().signal,
     stdout: {
+      isTTY: overrides.isTTY ?? false,
       write: (text: string): void => {
         stdout += text;
         overrides.onStdout?.(text);
@@ -52,8 +56,11 @@ async function runCliInDirectory(
         stderr += text;
       },
     },
+    openBrowser: (url: string): void => {
+      openedUrls.push(url);
+    },
   });
-  return { exitCode, stdout, stderr };
+  return { exitCode, stdout, stderr, openedUrls };
 }
 
 const studioStartTimeoutMs = 20_000;
@@ -62,6 +69,7 @@ async function runStudioUntilStopLine(
   cwd: string,
   argv: readonly string[],
   shellEnv: Readonly<Record<string, string>>,
+  isTTY = false,
 ): Promise<CliRun> {
   const stopController = new AbortController();
   const safetyTimer = setTimeout(
@@ -71,6 +79,7 @@ async function runStudioUntilStopLine(
   try {
     return await runCliInDirectory(cwd, argv, {
       shellEnv,
+      isTTY,
       stopSignal: stopController.signal,
       onStdout: (text: string): void => {
         if (text.includes('Ctrl-C to stop')) stopController.abort();
@@ -103,7 +112,12 @@ describe('runCli without a database', () => {
   it('prints the package version and exits 0', async () => {
     const run = await runCliInDirectory(esmProjectDirectory, ['-v']);
 
-    expect(run).toEqual({ exitCode: 0, stdout: '0.0.0\n', stderr: '' });
+    expect(run).toEqual({
+      exitCode: 0,
+      stdout: '0.0.0\n',
+      stderr: '',
+      openedUrls: [],
+    });
   });
 
   it('exits 2 on Node older than 22.15 and accepts 22.15', async () => {
@@ -316,8 +330,51 @@ describe('runCli against a real Postgres', () => {
     expect(run.stdout.split('https://local.drizzle.studio')).toHaveLength(2);
     expect(run.stdout).toContain('read-only (pass --write to edit)');
     expect(run.stdout).toContain('Ctrl-C to stop');
+    expect(run.stdout).not.toContain('\u001B');
+    expect(run.openedUrls).toEqual([
+      `https://local.drizzle.studio?port=${studioPort}`,
+    ]);
     expect(run.stdout + run.stderr).not.toContain(esmEnvPassword);
     expect(run.stdout + run.stderr).not.toContain(cjsEnvPassword);
+  });
+
+  it('prints the Studio URL as a clickable OSC 8 link in a terminal', async () => {
+    const studioPort = await reserveClosedPort();
+    const url = `https://local.drizzle.studio?port=${studioPort}`;
+
+    const run = await runStudioUntilStopLine(
+      esmProjectDirectory,
+      ['--port', String(studioPort)],
+      {
+        POSTGRES_HOST: String(container?.getHost()),
+        POSTGRES_PORT: String(container?.getPort()),
+      },
+      true,
+    );
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout).toContain(
+      `  studio      \u001B]8;;${url}\u001B\\${url}\u001B]8;;\u001B\\\n`,
+    );
+  });
+
+  it('does not open the browser with --no-open', async () => {
+    const studioPort = await reserveClosedPort();
+
+    const run = await runStudioUntilStopLine(
+      esmProjectDirectory,
+      ['--no-open', '--port', String(studioPort)],
+      {
+        POSTGRES_HOST: String(container?.getHost()),
+        POSTGRES_PORT: String(container?.getPort()),
+      },
+    );
+
+    expect(run.exitCode).toBe(0);
+    expect(run.openedUrls).toEqual([]);
+    expect(run.stdout).toContain(
+      'open it in your browser; press Ctrl-C to stop',
+    );
   });
 
   it('starts Studio read-write with --write and stops on abort', async () => {
