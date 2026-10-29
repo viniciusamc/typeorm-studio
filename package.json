@@ -1,0 +1,43 @@
+{
+  "name": "typeorm-studio",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Unofficial: open Drizzle Studio on the database of a TypeORM project",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "typeorm-studio": "./dist/cli/bin.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=22.15"
+  },
+  "packageManager": "pnpm@11.27.0",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "lint": "oxlint",
+    "format": "prettier --write ."
+  },
+  "dependencies": {
+    "pg": "~8.23.1",
+    "typescript": "6.0.3"
+  },
+  "devDependencies": {
+    "@testcontainers/postgresql": "^12.2.1",
+    "@types/node": "^26.6.5",
+    "@types/pg": "^8.23.1",
+    "dotenv": "^18.0.9",
+    "oxlint": "^1.90.0",
+    "prettier": "^3.9.10",
+    "reflect-metadata": "^0.2.2",
+    "testcontainers": "^12.2.1",
+    "typeorm": "1.1.2",
+    "typeorm-0.3": "npm:typeorm@0.3.30",
+    "vitest": "^5.0.5",
+    "zod": "^4.6.7"
+  }
+}

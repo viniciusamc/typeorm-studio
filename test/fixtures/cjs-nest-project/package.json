@@ -1,0 +1,11 @@
+{
+  "name": "fixture-cjs-nest-project",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typeorm": "typeorm-ts-node-commonjs",
+    "migration:run": "typeorm-ts-node-commonjs migration:run -d src/config/db/postgres/fixture-datasource.ts",
+    "migration:revert": "typeorm-ts-node-commonjs migration:revert -d src/config/db/postgres/fixture-datasource.ts"
+  }
+}

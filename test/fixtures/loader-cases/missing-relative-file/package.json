@@ -1,0 +1,5 @@
+{
+  "name": "loader-case-missing-relative-file",
+  "private": true,
+  "type": "module"
+}

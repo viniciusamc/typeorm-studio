@@ -1,0 +1,5 @@
+{
+  "name": "loader-case-uncaught-error",
+  "private": true,
+  "type": "module"
+}

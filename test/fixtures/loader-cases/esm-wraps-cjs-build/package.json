@@ -1,0 +1,5 @@
+{
+  "name": "loader-case-esm-wraps-cjs-build",
+  "private": true,
+  "type": "module"
+}

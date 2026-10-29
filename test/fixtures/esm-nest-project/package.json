@@ -1,0 +1,12 @@
+{
+  "name": "fixture-esm-nest-project",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "migration:create": "typeorm migration:create src/database/migrations/$npm_config_name",
+    "migration:run": "nest build && typeorm migration:run -d dist/config/database/postgres.data-source.js",
+    "migration:revert": "nest build && typeorm migration:revert -d dist/config/database/postgres.data-source.js"
+  }
+}

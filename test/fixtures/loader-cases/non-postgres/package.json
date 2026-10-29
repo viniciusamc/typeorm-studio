@@ -1,0 +1,5 @@
+{
+  "name": "loader-case-non-postgres",
+  "private": true,
+  "type": "module"
+}

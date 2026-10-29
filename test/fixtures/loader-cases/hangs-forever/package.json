@@ -1,0 +1,5 @@
+{
+  "name": "loader-case-hangs-forever",
+  "private": true,
+  "type": "module"
+}
