@@ -1,9 +1,24 @@
 {
   "name": "typeorm-studio",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.1.0",
   "description": "Unofficial: open Drizzle Studio on the database of a TypeORM project",
   "license": "MIT",
+  "keywords": [
+    "typeorm",
+    "drizzle-studio",
+    "nestjs",
+    "postgres",
+    "database",
+    "cli"
+  ],
+  "homepage": "https://github.com/viniciusamc/typeorm-studio#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/viniciusamc/typeorm-studio.git"
+  },
+  "bugs": {
+    "url": "https://github.com/viniciusamc/typeorm-studio/issues"
+  },
   "type": "module",
   "bin": {
     "typeorm-studio": "./dist/cli/bin.js"
@@ -17,6 +32,7 @@
   "packageManager": "pnpm@11.27.0",
   "scripts": {
     "build": "tsc -p tsconfig.build.json && cp src/drizzle/*.cjs dist/drizzle/",
+    "prepublishOnly": "pnpm build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "oxlint",

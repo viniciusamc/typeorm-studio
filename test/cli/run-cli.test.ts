@@ -110,11 +110,14 @@ describe('runCli without a database', () => {
   });
 
   it('prints the package version and exits 0', async () => {
+    const packageJson = JSON.parse(
+      fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+    ) as { readonly version: string };
     const run = await runCliInDirectory(esmProjectDirectory, ['-v']);
 
     expect(run).toEqual({
       exitCode: 0,
-      stdout: '0.0.0\n',
+      stdout: `${packageJson.version}\n`,
       stderr: '',
       openedUrls: [],
     });
